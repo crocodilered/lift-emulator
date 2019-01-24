@@ -1,8 +1,15 @@
+import Queue from '@/libs/queue'
+
 import {
   SIG_FLOOR_BUTTON,
   SIG_CABIN_BUTTON,
   SIG_LIMIT_REACHED,
-  SIG_FLOOR_REACHED
+  SIG_FLOOR_REACHED,
+  SIG_MOTOR_UP,
+  SIG_MOTOR_DOWN,
+  SIG_MOTOR_STOP,
+  SIG_CABIN_OPEN,
+  SIG_CABIN_CLOSE
 } from './signals'
 
 class Emulator {
@@ -10,7 +17,12 @@ class Emulator {
    * Конструктор
    */
   constructor () {
-    this.queue = []
+    // Последний зафиксированный этаж
+    this.reachedFloor = null
+    // очередь вызова кабины на этажах
+    this.floorQueue = new Queue()
+    // очередь направления кабины (жмут кнопки в кабине)
+    this.cabinQueue = new Queue()
     // При инициализации насильно опускаем кабину на первый этаж
     this.signal(SIG_FLOOR_BUTTON, 1)
   }
@@ -21,11 +33,9 @@ class Emulator {
    * @param {*} value 
    */
   signal (type, value) {
-    if (typeof this[type] === 'function' ) {
-      this[type](value)
-    } else {
-      console.log(`${type}: signal is not defined.`)
-    }
+    return (typeof this[type] === 'function' )
+      ? this[type](value)
+      : null
   }
 
   /**
@@ -35,17 +45,24 @@ class Emulator {
    * @param {integer} floorNumber 
    */
   [SIG_FLOOR_BUTTON] (floor) {
-    this.queue.push(floor)
+    if (!this.floorQueue.contains(floor)) {
+      this.floorQueue.put(floor)
+    }
+    return
   }
 
   /**
    * Оператор нажал в кабине кнопку с этажом N
    * Реакция:
+   *    Поместить номер этажа в очередь для последующей обработки
    *    Закрываем двери кабины
    *    Пуск мотора вверх или вниз
    * @param {integer} floor 
    */
   [SIG_CABIN_BUTTON] (floor) {
+    if (!this.cabinQueue.contains(floor)) {
+      this.cabinQueue.put(floor)
+    }
     return
   }
 
@@ -54,10 +71,12 @@ class Emulator {
    * Реакция:
    *    Останов мотора
    *    Открываем двери кабины
-   
    */
   [SIG_LIMIT_REACHED] () {
-    return
+    return [
+      { type: SIG_MOTOR_STOP },
+      { type: SIG_CABIN_OPEN }
+    ]
   }
 
   /**
@@ -66,10 +85,17 @@ class Emulator {
    *    Если цель -- этаж N, то
    *        Останов мотора
    *        Открываем двери кабины
-   * @param {string} value 
+   * @param {string} floor
    */
-  [SIG_FLOOR_REACHED] () {
-    return
+  [SIG_FLOOR_REACHED] (floor) {
+    this.prevFloor = floor
+    if (this.floorQueue.includes(floor) || this.cabinQueue.includes(floor)) {
+      // Удалим текущий этаж из обеих очередей
+      return [
+        { type: SIG_MOTOR_STOP },
+        { type: SIG_CABIN_OPEN }
+      ]
+    }
   }
 }
 
